@@ -1,0 +1,8 @@
+[package]
+name = "tree"
+version = "0.1.0"
+authors = ["Evan Cameron <evan@vectorface.com>"]
+
+[dependencies]
+rayon = "*"
+typed-arena = "*"
