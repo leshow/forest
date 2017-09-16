@@ -1,3 +1,5 @@
+// extern crate typed_arena;
+
 // #[derive(PartialOrd, PartialEq)]
 // struct Tree<'a, T: 'a + Ord> {
 //     l: Option<&'a mut Tree<'a, T>>,
