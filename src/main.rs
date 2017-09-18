@@ -57,20 +57,22 @@ fn insert<T: Ord>(tree: &mut MyTree<T>, item: T) {
             } else {
                 insert(&mut node.r, item);
             }
+        } else if node.data == item {
+            return;
         }
     }
 }
 
 fn fold<T: Ord, B, F>(tree: &MyTree<T>, init: B, mut f: F) -> B
 where
-    F: for <'a> FnMut(B, &'a T) -> B,
+    F: for<'a> FnMut(B, &'a T) -> B,
 {
     let mut acc = init;
     if let &Some(ref node) = tree {
         let node = &*node;
         let mut stack = vec![node];
 
-        while let Some(ref node) = stack.pop() { 
+        while let Some(ref node) = stack.pop() {
             acc = f(acc, &node.data);
             if let Some(ref right) = node.r {
                 stack.push(right);
@@ -102,4 +104,5 @@ fn main() {
 
     println!("{:?}", tree);
     println!("{:?}", len(&tree));
+    println!("{:?}", fold(&tree, 0, |acc, &x| acc + x));
 }
