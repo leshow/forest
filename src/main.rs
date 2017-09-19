@@ -2,68 +2,73 @@
 
 use std::cmp::Ordering;
 
-type MyTree<T> = Option<Box<Tree<T>>>;
+// struct Node<T: Ord>(Option<Box<Tree<T>>>);
+type Tree<T> = Option<Box<Node<T>>>;
+
+trait Link<T: Ord> {
+    fn new(data: T) -> Tree<T>;
+    fn insert(&mut self, item: T);
+    fn len(&self) -> usize;
+}
 
 #[derive(PartialOrd, PartialEq, Debug)]
-struct Tree<T: Ord> {
-    l: MyTree<T>,
-    r: MyTree<T>,
+struct Node<T: Ord> {
+    l: Tree<T>,
+    r: Tree<T>,
     data: T,
 }
 
-impl<T: Ord> Tree<T> {
-    fn new_unboxed(data: T) -> Tree<T> {
-        Tree {
+impl<T: Ord> Node<T> {
+    fn new(data: T) -> Node<T> {
+        Node {
             l: None,
             data,
             r: None,
         }
     }
-    fn new(data: T) -> MyTree<T> {
-        Some(box Tree {
-            l: None,
-            data,
-            r: None,
-        })
-    }
 }
 
-fn len<T: Ord>(tree: &MyTree<T>) -> i32 {
-    // without box syntax
-    // if let &Some(ref node) = tree {
-    //     let node = &*node;
-    //     1 + count(&node.l) + count(&node.r)
-    // } else {
-    //     0
-    // }
-    if let &Some(box Tree { ref l, ref r, .. }) = tree {
-        1 + len(l) + len(r)
-    } else {
-        0
+impl<T: Ord> Link<T> for Tree<T> {
+    fn new(data: T) -> Tree<T> {
+        Some(box Node::new(data))
     }
-}
 
-fn insert<T: Ord>(tree: &mut MyTree<T>, item: T) {
-    if let &mut Some(ref mut node) = tree {
-        match item.cmp(&node.data) {
-            Ordering::Less => if node.l == None {
-                node.l = Tree::new(item);
-            } else {
-                insert(&mut node.l, item);
-            },
-            Ordering::Greater => if node.r == None {
-                node.r = Tree::new(item);
-            } else {
-                insert(&mut node.r, item);
-            },
-            Ordering::Equal => {
-                return;
+    fn len(&self) -> usize {
+        // without box syntax
+        // if let &Some(ref node) = tree {
+        //     let node = &*node;
+        //     1 + count(&node.l) + count(&node.r)
+        // } else {
+        //     0
+        // }
+        if let &Some(box Node { ref l, ref r, .. }) = self {
+            1 + l.len() + r.len()
+        } else {
+            0
+        }
+    }
+
+    fn insert(&mut self, item: T) {
+        if let &mut Some(ref mut node) = self {
+            match item.cmp(&node.data) {
+                Ordering::Less => if node.l == None {
+                    node.l = <Tree<T> as Link<T>>::new(item);
+                } else {
+                    node.l.insert(item);
+                },
+                Ordering::Greater => if node.r == None {
+                    node.r = <Tree<T> as Link<T>>::new(item);
+                } else {
+                    node.r.insert(item);
+                },
+                Ordering::Equal => {
+                    return;
+                }
             }
         }
     }
 }
-
-fn fold<T: Ord, B, F>(tree: &MyTree<T>, init: B, mut f: F) -> B
+fn fold<T: Ord, B, F>(tree: &Tree<T>, init: B, mut f: F) -> B
 where
     F: for<'a> FnMut(B, &'a T) -> B,
 {
@@ -90,19 +95,19 @@ where
 
 fn main() {
     let mut tree = Tree::new(1);
-    insert(&mut tree, 2);
-    insert(&mut tree, 3);
-    insert(&mut tree, 4);
-    insert(&mut tree, 5);
-    insert(&mut tree, 6);
-    insert(&mut tree, 7);
-    insert(&mut tree, 8);
-    insert(&mut tree, -18);
-    insert(&mut tree, -10);
-    insert(&mut tree, -1);
-    insert(&mut tree, -2);
+    tree.insert(2);
+    tree.insert(3);
+    tree.insert(4);
+    tree.insert(5);
+    tree.insert(6);
+    tree.insert(7);
+    tree.insert(8);
+    tree.insert(-18);
+    tree.insert(-10);
+    tree.insert(-1);
+    tree.insert(-2);
 
     println!("{:?}", tree);
-    println!("{:?}", len(&tree));
+    println!("{:?}", tree.len());
     println!("{:?}", fold(&tree, 0, |acc, &x| acc + x));
 }
