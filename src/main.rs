@@ -60,23 +60,6 @@ fn insert<T: Ord>(tree: &mut MyTree<T>, item: T) {
                 return;
             }
         }
-        // if item < node.data {
-        //     if node.l == None {
-        //         let t_ = Tree::new(item);
-        //         node.l = Some(box t_);
-        //     } else {
-        //         insert(&mut node.l, item);
-        //     }
-        // } else if item > node.data {
-        //     if node.r == None {
-        //         let t_ = Tree::new(item);
-        //         node.r = Some(box t_);
-        //     } else {
-        //         insert(&mut node.r, item);
-        //     }
-        // } else if node.data == item {
-        //     return;
-        // }
     }
 }
 
