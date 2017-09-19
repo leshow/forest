@@ -1,5 +1,7 @@
 #![feature(box_syntax, box_patterns)]
 
+use std::cmp::Ordering;
+
 type MyTree<T> = Option<Box<Tree<T>>>;
 
 #[derive(PartialOrd, PartialEq, Debug)]
@@ -10,14 +12,14 @@ struct Tree<T: Ord> {
 }
 
 impl<T: Ord> Tree<T> {
-    fn new(data: T) -> Tree<T> {
+    fn new_unboxed(data: T) -> Tree<T> {
         Tree {
             l: None,
             data,
             r: None,
         }
     }
-    fn new_box(data: T) -> MyTree<T> {
+    fn new(data: T) -> MyTree<T> {
         Some(box Tree {
             l: None,
             data,
@@ -43,23 +45,38 @@ fn len<T: Ord>(tree: &MyTree<T>) -> i32 {
 
 fn insert<T: Ord>(tree: &mut MyTree<T>, item: T) {
     if let &mut Some(ref mut node) = tree {
-        if item < node.data {
-            if node.l == None {
-                let t_ = Tree::new(item);
-                node.l = Some(box t_);
+        match item.cmp(&node.data) {
+            Ordering::Less => if node.l == None {
+                node.l = Tree::new(item);
             } else {
                 insert(&mut node.l, item);
-            }
-        } else if item > node.data {
-            if node.r == None {
-                let t_ = Tree::new(item);
-                node.r = Some(box t_);
+            },
+            Ordering::Greater => if node.r == None {
+                node.r = Tree::new(item);
             } else {
                 insert(&mut node.r, item);
+            },
+            Ordering::Equal => {
+                return;
             }
-        } else if node.data == item {
-            return;
         }
+        // if item < node.data {
+        //     if node.l == None {
+        //         let t_ = Tree::new(item);
+        //         node.l = Some(box t_);
+        //     } else {
+        //         insert(&mut node.l, item);
+        //     }
+        // } else if item > node.data {
+        //     if node.r == None {
+        //         let t_ = Tree::new(item);
+        //         node.r = Some(box t_);
+        //     } else {
+        //         insert(&mut node.r, item);
+        //     }
+        // } else if node.data == item {
+        //     return;
+        // }
     }
 }
 
@@ -89,7 +106,7 @@ where
 }
 
 fn main() {
-    let mut tree = Tree::new_box(1);
+    let mut tree = Tree::new(1);
     insert(&mut tree, 2);
     insert(&mut tree, 3);
     insert(&mut tree, 4);
