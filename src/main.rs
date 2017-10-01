@@ -5,14 +5,20 @@ use std::cmp::Ordering;
 // struct Node<T: Ord>(Option<Box<Tree<T>>>);
 type Tree<T> = Option<Box<Node<T>>>;
 
-trait Link<T: Ord> {
+pub trait Link<T: Ord> {
     fn new(data: T) -> Tree<T>;
+
     fn insert(&mut self, item: T);
+
     fn len(&self) -> usize;
+
+    fn fold<B, F>(&self, init: B, f: F) -> B
+    where
+        F: for<'a> FnMut(B, &'a T) -> B;
 }
 
 #[derive(PartialOrd, PartialEq, Debug)]
-struct Node<T: Ord> {
+pub struct Node<T: Ord> {
     l: Tree<T>,
     r: Tree<T>,
     data: T,
@@ -67,31 +73,32 @@ impl<T: Ord> Link<T> for Tree<T> {
             }
         }
     }
-}
-fn fold<T: Ord, B, F>(tree: &Tree<T>, init: B, mut f: F) -> B
-where
-    F: for<'a> FnMut(B, &'a T) -> B,
-{
-    let mut acc = init;
-    if let &Some(ref node) = tree {
-        let node = &*node;
-        let mut stack = vec![node];
+    fn fold<B, F>(&self, init: B, mut f: F) -> B
+    where
+        F: for<'a> FnMut(B, &'a T) -> B,
+    {
+        let mut acc = init;
+        if let &Some(ref node) = self {
+            let node = &*node;
+            let mut stack = vec![node];
 
-        while let Some(ref node) = stack.pop() {
-            acc = f(acc, &node.data);
-            if let Some(ref right) = node.r {
-                stack.push(right);
+            while let Some(ref node) = stack.pop() {
+                acc = f(acc, &node.data);
+                if let Some(ref right) = node.r {
+                    stack.push(right);
+                }
+                if let Some(ref left) = node.l {
+                    stack.push(left);
+                }
             }
-            if let Some(ref left) = node.l {
-                stack.push(left);
-            }
+
+            acc
+        } else {
+            acc
         }
-
-        acc
-    } else {
-        acc
     }
 }
+
 
 fn main() {
     let mut tree = Tree::new(1);
@@ -109,5 +116,5 @@ fn main() {
 
     println!("{:?}", tree);
     println!("{:?}", tree.len());
-    println!("{:?}", fold(&tree, 0, |acc, &x| acc + x));
+    println!("{:?}", tree.fold(0, |acc, &x| acc + x));
 }
