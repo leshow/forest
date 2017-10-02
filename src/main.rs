@@ -1,17 +1,15 @@
 #![feature(box_syntax, box_patterns)]
 
+use std::iter::IntoIterator;
 use std::cmp::Ordering;
 
 // struct Node<T: Ord>(Option<Box<Tree<T>>>);
-type Tree<T> = Option<Box<Node<T>>>;
+struct Tree<T: Ord>(Option<Box<Node<T>>>);
 
 pub trait Link<T: Ord> {
     fn new(data: T) -> Tree<T>;
-
     fn insert(&mut self, item: T);
-
     fn len(&self) -> usize;
-
     fn fold<B, F>(&self, init: B, f: F) -> B
     where
         F: for<'a> FnMut(B, &'a T) -> B;
@@ -27,16 +25,16 @@ pub struct Node<T: Ord> {
 impl<T: Ord> Node<T> {
     fn new(data: T) -> Node<T> {
         Node {
-            l: None,
+            l: Tree(None),
             data,
-            r: None,
+            r: Tree(None),
         }
     }
 }
 
 impl<T: Ord> Link<T> for Tree<T> {
     fn new(data: T) -> Tree<T> {
-        Some(box Node::new(data))
+        Tree(Some(box Node::new(data)))
     }
 
     fn len(&self) -> usize {
@@ -47,7 +45,7 @@ impl<T: Ord> Link<T> for Tree<T> {
         // } else {
         //     0
         // }
-        if let &Some(box Node { ref l, ref r, .. }) = self {
+        if let &Some(box Node { ref l, ref r, .. }) = self.0 {
             1 + l.len() + r.len()
         } else {
             0
@@ -55,7 +53,7 @@ impl<T: Ord> Link<T> for Tree<T> {
     }
 
     fn insert(&mut self, item: T) {
-        if let &mut Some(ref mut node) = self {
+        if let &mut Some(ref mut node) = self.0 {
             match item.cmp(&node.data) {
                 Ordering::Less => if node.l == None {
                     node.l = <Tree<T> as Link<T>>::new(item);
@@ -78,10 +76,9 @@ impl<T: Ord> Link<T> for Tree<T> {
         F: for<'a> FnMut(B, &'a T) -> B,
     {
         let mut acc = init;
-        if let &Some(ref node) = self {
+        if let &Some(ref node) = self.0 {
             let node = &*node;
             let mut stack = vec![node];
-
             while let Some(ref node) = stack.pop() {
                 acc = f(acc, &node.data);
                 if let Some(ref right) = node.r {
@@ -91,7 +88,6 @@ impl<T: Ord> Link<T> for Tree<T> {
                     stack.push(left);
                 }
             }
-
             acc
         } else {
             acc
@@ -99,6 +95,25 @@ impl<T: Ord> Link<T> for Tree<T> {
     }
 }
 
+pub struct TreeIter<T: Ord> {
+    right: Vec<Tree<T>>,
+    cur: Option<T>,
+}
+
+impl<'a, T: Ord> IntoIterator for &'a Tree<T> {
+    type Item = T;
+    type IntoIter = TreeIter<T>;
+    fn into_iter(self) -> Self::IntoIter {
+        unimplemented!()
+    }
+}
+
+impl<'a, T: Ord> Iterator for &'a TreeIter<T> {
+    type Item = T;
+    fn next(&mut self) -> Option<T> {
+        unimplemented!()
+    }
+}
 
 fn main() {
     let mut tree = Tree::new(1);
