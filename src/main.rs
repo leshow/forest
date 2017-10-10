@@ -3,7 +3,6 @@
 use std::iter::IntoIterator;
 use std::cmp::Ordering;
 
-// struct Node<T: Ord>(Option<Box<Tree<T>>>);
 #[derive(Debug, PartialOrd)]
 pub struct Tree<T: Ord>(Option<Box<Node<T>>>);
 
@@ -32,10 +31,10 @@ pub trait Link<T: Ord> {
 }
 
 #[derive(Debug, PartialEq, PartialOrd)]
-pub(crate) struct Node<T: Ord> {
-    l: Tree<T>,
-    r: Tree<T>,
-    data: T,
+pub struct Node<T: Ord> {
+    pub l: Tree<T>,
+    pub r: Tree<T>,
+    pub data: T,
 }
 
 impl<T: Ord> Node<T> {
@@ -111,25 +110,55 @@ impl<T: Ord> Link<T> for Tree<T> {
     }
 }
 
-// pub struct TreeIter<T: Ord> {
-//     right: Vec<Tree<T>>,
-//     cur: Option<T>,
-// }
+pub struct TreeIter<T: Ord> {
+    right: Vec<Tree<T>>,
+    cur: Option<T>,
+}
 
-// impl<'a, T: Ord> IntoIterator for &'a Tree<T> {
-//     type Item = T;
-//     type IntoIter = TreeIter<T>;
-//     fn into_iter(self) -> Self::IntoIter {
-//         unimplemented!()
-//     }
-// }
+impl<T: Ord> TreeIter<T> {
+    pub fn new(node: Tree<T>) -> TreeIter<T> {
+        let mut iter = TreeIter {
+            right: vec![],
+            cur: None,
+        };
+        iter.add_left(node);
+        iter
+    }
 
-// impl<'a, T: Ord> Iterator for &'a TreeIter<T> {
-//     type Item = T;
-//     fn next(&mut self) -> Option<T> {
-//         unimplemented!()
-//     }
-// }
+    fn add_left(&mut self, mut root: Tree<T>) {
+        // https://github.com/rust-lang/rust/issues/19828
+        // while let Some(box Node { l, r, data }) = root.0.take() {
+        //     self.right.push(r);
+        //     self.cur = Some(data);
+        //     root = l;
+        // }
+        while let Some(box node) = root.0 {
+            let Node { l, r, data } = node;
+            self.right.push(r);
+            self.cur = Some(data);
+            root = l;
+        }
+    }
+}
+impl<T: Ord> IntoIterator for Tree<T> {
+    type Item = T;
+    type IntoIter = TreeIter<T>;
+    fn into_iter(self) -> Self::IntoIter {
+        TreeIter::new(self)
+    }
+}
+
+impl<T: Ord> Iterator for TreeIter<T> {
+    type Item = T;
+    fn next(&mut self) -> Option<T> {
+        let cur_node = self.cur.take();
+        match self.right.pop() {
+            Some(t) => self.add_left(t),
+            _ => {}
+        }
+        return cur_node;
+    }
+}
 
 fn main() {
     let mut tree = Tree::new(1);
@@ -148,4 +177,8 @@ fn main() {
     println!("{:?}", tree);
     println!("{:?}", tree.len());
     println!("{:?}", tree.fold(0, |acc, &x| acc + x));
+    let mut i = tree.into_iter();
+    println!("{:?}", i.next());
+    println!("{:?}", i.next());
+    println!("{:?}", i.next());
 }
