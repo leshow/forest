@@ -1,12 +1,14 @@
 #![feature(box_syntax, box_patterns)]
 
+extern crate rayon;
+
 use std::iter::IntoIterator;
 use std::cmp::Ordering;
 
 #[derive(Debug, PartialOrd)]
-pub struct Tree<T: Ord>(Option<Box<Node<T>>>);
+pub struct Tree<T: Ord + Sync>(Option<Box<Node<T>>>);
 
-impl<T: Ord> PartialEq for Tree<T> {
+impl<T: Ord + Sync> PartialEq for Tree<T> {
     fn eq(&self, other: &Self) -> bool {
         match self.0 {
             Some(box ref x) => match other.0 {
@@ -21,23 +23,24 @@ impl<T: Ord> PartialEq for Tree<T> {
     }
 }
 
-pub trait Link<T: Ord> {
+pub trait Link<T: Ord + Sync> {
     fn new(data: T) -> Tree<T>;
     fn insert(&mut self, item: T);
     fn len(&self) -> usize;
+    fn par_len(&self) -> usize;
     fn fold<B, F>(&self, init: B, f: F) -> B
     where
         F: for<'a> FnMut(B, &'a T) -> B;
 }
 
 #[derive(Debug, PartialEq, PartialOrd)]
-pub struct Node<T: Ord> {
+pub struct Node<T: Ord + Sync> {
     pub l: Tree<T>,
     pub r: Tree<T>,
     pub data: T,
 }
 
-impl<T: Ord> Node<T> {
+impl<T: Ord + Sync> Node<T> {
     fn new(data: T) -> Node<T> {
         Node {
             l: Tree(None),
@@ -47,7 +50,7 @@ impl<T: Ord> Node<T> {
     }
 }
 
-impl<T: Ord> Link<T> for Tree<T> {
+impl<T: Ord + Sync> Link<T> for Tree<T> {
     fn new(data: T) -> Tree<T> {
         Tree(Some(box Node::new(data)))
     }
@@ -62,6 +65,15 @@ impl<T: Ord> Link<T> for Tree<T> {
         // }
         if let &Some(box Node { ref l, ref r, .. }) = &self.0 {
             1 + l.len() + r.len()
+        } else {
+            0
+        }
+    }
+
+    fn par_len(&self) -> usize {
+        if let &Some(box Node { ref l, ref r, .. }) = &self.0 {
+            let (len_l, len_r) = rayon::join(|| l.len(), || r.len());
+            1 + len_l + len_r
         } else {
             0
         }
@@ -86,6 +98,7 @@ impl<T: Ord> Link<T> for Tree<T> {
             }
         }
     }
+
     fn fold<B, F>(&self, init: B, mut f: F) -> B
     where
         F: for<'a> FnMut(B, &'a T) -> B,
@@ -110,12 +123,12 @@ impl<T: Ord> Link<T> for Tree<T> {
     }
 }
 
-pub struct TreeIter<T: Ord> {
+pub struct TreeIter<T: Ord + Sync> {
     right: Vec<Tree<T>>,
     cur: Option<T>,
 }
 
-impl<T: Ord> TreeIter<T> {
+impl<T: Ord + Sync> TreeIter<T> {
     pub fn new(node: Tree<T>) -> TreeIter<T> {
         let mut iter = TreeIter {
             right: vec![],
@@ -140,7 +153,8 @@ impl<T: Ord> TreeIter<T> {
         }
     }
 }
-impl<T: Ord> IntoIterator for Tree<T> {
+
+impl<T: Ord + Sync> IntoIterator for Tree<T> {
     type Item = T;
     type IntoIter = TreeIter<T>;
     fn into_iter(self) -> Self::IntoIter {
@@ -148,7 +162,7 @@ impl<T: Ord> IntoIterator for Tree<T> {
     }
 }
 
-impl<T: Ord> Iterator for TreeIter<T> {
+impl<T: Ord + Sync> Iterator for TreeIter<T> {
     type Item = T;
     fn next(&mut self) -> Option<T> {
         let cur_node = self.cur.take();
