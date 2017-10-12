@@ -27,6 +27,7 @@ pub trait Link<T: Ord + Sync> {
     fn new(data: T) -> Tree<T>;
     fn insert(&mut self, item: T);
     fn len(&self) -> usize;
+    fn is_empty(&self) -> bool;
     fn par_len(&self) -> usize;
     fn fold<B, F>(&self, init: B, f: F) -> B
     where
@@ -63,7 +64,7 @@ impl<T: Ord + Sync> Link<T> for Tree<T> {
         // } else {
         //     0
         // }
-        if let &Some(box Node { ref l, ref r, .. }) = &self.0 {
+        if let Some(box Node { ref l, ref r, .. }) = self.0 {
             1 + l.len() + r.len()
         } else {
             0
@@ -71,12 +72,16 @@ impl<T: Ord + Sync> Link<T> for Tree<T> {
     }
 
     fn par_len(&self) -> usize {
-        if let &Some(box Node { ref l, ref r, .. }) = &self.0 {
+        if let Some(box Node { ref l, ref r, .. }) = self.0 {
             let (len_l, len_r) = rayon::join(|| l.len(), || r.len());
             1 + len_l + len_r
         } else {
             0
         }
+    }
+
+    fn is_empty(&self) -> bool {
+        self.len() == 0
     }
 
     fn insert(&mut self, item: T) {
@@ -104,10 +109,10 @@ impl<T: Ord + Sync> Link<T> for Tree<T> {
         F: for<'a> FnMut(B, &'a T) -> B,
     {
         let mut acc = init;
-        if let &Some(ref node) = &self.0 {
+        if let Some(ref node) = self.0 {
             let node = &*node;
             let mut stack = vec![node];
-            while let Some(ref node) = stack.pop() {
+            while let Some(node) = stack.pop() {
                 acc = f(acc, &node.data);
                 if let Some(ref right) = node.r.0 {
                     stack.push(right);
@@ -166,33 +171,38 @@ impl<T: Ord + Sync> Iterator for TreeIter<T> {
     type Item = T;
     fn next(&mut self) -> Option<T> {
         let cur_node = self.cur.take();
-        match self.right.pop() {
-            Some(t) => self.add_left(t),
-            _ => {}
+        if let Some(t) = self.right.pop() {
+            self.add_left(t)
         }
-        return cur_node;
+        cur_node
     }
 }
 
-fn main() {
-    let mut tree = Tree::new(1);
-    tree.insert(2);
-    tree.insert(3);
-    tree.insert(4);
-    tree.insert(5);
-    tree.insert(6);
-    tree.insert(7);
-    tree.insert(8);
-    tree.insert(-18);
-    tree.insert(-10);
-    tree.insert(-1);
-    tree.insert(-2);
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-    println!("{:?}", tree);
-    println!("{:?}", tree.len());
-    println!("{:?}", tree.fold(0, |acc, &x| acc + x));
-    let mut i = tree.into_iter();
-    println!("{:?}", i.next());
-    println!("{:?}", i.next());
-    println!("{:?}", i.next());
+    #[test]
+    fn it_works() {
+        let mut tree = Tree::new(1);
+        tree.insert(2);
+        tree.insert(3);
+        tree.insert(4);
+        tree.insert(5);
+        tree.insert(6);
+        tree.insert(7);
+        tree.insert(8);
+        tree.insert(-18);
+        tree.insert(-10);
+        tree.insert(-1);
+        tree.insert(-2);
+
+        println!("{:?}", tree);
+        println!("{:?}", tree.len());
+        println!("{:?}", tree.fold(0, |acc, &x| acc + x));
+        let mut i = tree.into_iter();
+        println!("{:?}", i.next());
+        println!("{:?}", i.next());
+        println!("{:?}", i.next());
+    }
 }
