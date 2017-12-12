@@ -113,15 +113,13 @@ impl<T: Ord + Sync> Link<T> for Tree<T> {
                 Some(self)
             } else {
                 let l_ = l.contains(item);
-                if l_.is_some() {
-                    l_
-                } else {
-                    let r_ = r.contains(item);
-                    if r_.is_some() {
-                        r_
-                    } else {
-                        None
-                    }
+                let r_ = r.contains(item);
+                match l_.is_some() {
+                    true => l_,
+                    false => match r_.is_some() {
+                        true => r_,
+                        false => None,
+                    },
                 }
             }
         } else {
