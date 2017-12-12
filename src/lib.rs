@@ -25,7 +25,8 @@ impl<T: Ord + Sync> PartialEq for Tree<T> {
 
 pub trait Link<T: Ord + Sync> {
     fn new(data: T) -> Tree<T>;
-    fn insert(&mut self, item: T);
+    fn insert(&mut self, T);
+    fn contains(&self, &T) -> Option<&Tree<T>>;
     fn len(&self) -> usize;
     fn is_empty(&self) -> bool;
     fn par_len(&self) -> usize;
@@ -57,18 +58,15 @@ impl<T: Ord + Sync> Link<T> for Tree<T> {
     }
 
     fn len(&self) -> usize {
-        // without box syntax
-        // if let &Some(ref node) = tree {
-        //     let node = &*node;
-        //     1 + count(&node.l) + count(&node.r)
-        // } else {
-        //     0
-        // }
         if let Some(box Node { ref l, ref r, .. }) = self.0 {
             1 + l.len() + r.len()
         } else {
             0
         }
+        // without box syntax
+        // if let &Some(ref node) = tree {
+        //     let node = &*node;
+        //     1 + node.l.len() + node.r.len()
     }
 
     fn par_len(&self) -> usize {
@@ -101,6 +99,33 @@ impl<T: Ord + Sync> Link<T> for Tree<T> {
                     return;
                 }
             }
+        }
+    }
+
+    fn contains(&self, item: &T) -> Option<&Tree<T>> {
+        if let Some(box Node {
+            ref l,
+            ref r,
+            ref data,
+        }) = self.0
+        {
+            if item == data {
+                Some(self)
+            } else {
+                let l_ = l.contains(item);
+                if l_.is_some() {
+                    l_
+                } else {
+                    let r_ = r.contains(item);
+                    if r_.is_some() {
+                        r_
+                    } else {
+                        None
+                    }
+                }
+            }
+        } else {
+            None
         }
     }
 
@@ -146,10 +171,6 @@ impl<T: Ord + Sync> TreeIter<T> {
     fn add_left(&mut self, mut root: Tree<T>) {
         // https://github.com/rust-lang/rust/issues/19828
         // while let Some(box Node { l, r, data }) = root.0.take() {
-        //     self.right.push(r);
-        //     self.cur = Some(data);
-        //     root = l;
-        // }
         while let Some(box node) = root.0 {
             let Node { l, r, data } = node;
             self.right.push(r);
