@@ -2,17 +2,25 @@
 
 extern crate rayon;
 
-use std::iter::IntoIterator;
+use std::iter::{FromIterator, IntoIterator};
+use std::collections::VecDeque;
+use std::convert::AsMut;
 use std::cmp::Ordering;
 
-#[derive(Debug, PartialOrd)]
-pub struct Tree<T: Ord + Sync>(Option<Box<Node<T>>>);
+#[derive(Debug)]
+pub struct Tree<T: Ord>(Option<Box<Node<T>>>);
 
-impl<T: Ord + Sync> PartialEq for Tree<T> {
+impl<T: Ord> AsMut<Option<Box<Node<T>>>> for Tree<T> {
+    fn as_mut(&mut self) -> &mut Option<Box<Node<T>>> {
+        &mut self.0
+    }
+}
+
+impl<T: Ord> PartialEq for Tree<T> {
     fn eq(&self, other: &Self) -> bool {
         match self.0 {
             Some(box ref x) => match other.0 {
-                Some(box ref y) => y == x,
+                Some(box ref y) => *y == *x,
                 None => false,
             },
             None => match other.0 {
@@ -23,26 +31,25 @@ impl<T: Ord + Sync> PartialEq for Tree<T> {
     }
 }
 
-pub trait Link<T: Ord + Sync> {
+pub trait Link<T: Ord> {
     fn new(data: T) -> Tree<T>;
     fn insert(&mut self, T);
     fn contains(&self, &T) -> Option<&Tree<T>>;
     fn len(&self) -> usize;
     fn is_empty(&self) -> bool;
-    fn par_len(&self) -> usize;
     fn fold<B, F>(&self, init: B, f: F) -> B
     where
         F: for<'a> FnMut(B, &'a T) -> B;
 }
 
-#[derive(Debug, PartialEq, PartialOrd)]
-pub struct Node<T: Ord + Sync> {
+#[derive(Debug, PartialEq)]
+pub struct Node<T: Ord> {
     pub l: Tree<T>,
     pub r: Tree<T>,
     pub data: T,
 }
 
-impl<T: Ord + Sync> Node<T> {
+impl<T: Ord> Node<T> {
     fn new(data: T) -> Node<T> {
         Node {
             l: Tree(None),
@@ -52,7 +59,7 @@ impl<T: Ord + Sync> Node<T> {
     }
 }
 
-impl<T: Ord + Sync> Link<T> for Tree<T> {
+impl<T: Ord> Link<T> for Tree<T> {
     fn new(data: T) -> Tree<T> {
         Tree(Some(box Node::new(data)))
     }
@@ -67,15 +74,6 @@ impl<T: Ord + Sync> Link<T> for Tree<T> {
         // if let &Some(ref node) = tree {
         //     let node = &*node;
         //     1 + node.l.len() + node.r.len()
-    }
-
-    fn par_len(&self) -> usize {
-        if let Some(box Node { ref l, ref r, .. }) = self.0 {
-            let (len_l, len_r) = rayon::join(|| l.len(), || r.len());
-            1 + len_l + len_r
-        } else {
-            0
-        }
     }
 
     fn is_empty(&self) -> bool {
@@ -151,12 +149,12 @@ impl<T: Ord + Sync> Link<T> for Tree<T> {
     }
 }
 
-pub struct TreeIter<T: Ord + Sync> {
+pub struct TreeIter<T: Ord> {
     right: Vec<Tree<T>>,
     cur: Option<T>,
 }
 
-impl<T: Ord + Sync> TreeIter<T> {
+impl<T: Ord> TreeIter<T> {
     pub fn new(node: Tree<T>) -> TreeIter<T> {
         let mut iter = TreeIter {
             right: vec![],
@@ -178,7 +176,7 @@ impl<T: Ord + Sync> TreeIter<T> {
     }
 }
 
-impl<T: Ord + Sync> IntoIterator for Tree<T> {
+impl<T: Ord> IntoIterator for Tree<T> {
     type Item = T;
     type IntoIter = TreeIter<T>;
     fn into_iter(self) -> Self::IntoIter {
@@ -186,7 +184,7 @@ impl<T: Ord + Sync> IntoIterator for Tree<T> {
     }
 }
 
-impl<T: Ord + Sync> Iterator for TreeIter<T> {
+impl<T: Ord> Iterator for TreeIter<T> {
     type Item = T;
     fn next(&mut self) -> Option<T> {
         let cur_node = self.cur.take();
@@ -197,6 +195,97 @@ impl<T: Ord + Sync> Iterator for TreeIter<T> {
     }
 }
 
+pub struct NodeIterMut<'a, T: 'a + Ord> {
+    elem: Option<&'a mut T>,
+    left: Option<&'a mut Node<T>>,
+    right: Option<&'a mut Node<T>>,
+}
+
+pub enum State<'a, T: 'a + Ord> {
+    Elem(&'a mut T),
+    Node(&'a mut Node<T>),
+}
+
+pub struct IterMut<'a, T: 'a + Ord>(VecDeque<NodeIterMut<'a, T>>);
+
+impl<T: Ord> Tree<T> {
+    pub fn iter_mut(&mut self) -> IterMut<T> {
+        let mut deque = VecDeque::new();
+        self.as_mut().map(|root| deque.push_front(root.iter_mut()));
+        IterMut(deque)
+    }
+}
+
+impl<T: Ord> Node<T> {
+    pub fn iter_mut(&mut self) -> NodeIterMut<T> {
+        NodeIterMut {
+            elem: Some(&mut self.data),
+            left: self.l.as_mut().map(|node| &mut **node),
+            right: self.r.as_mut().map(|node| &mut **node),
+        }
+    }
+}
+
+impl<'a, T: Ord> Iterator for NodeIterMut<'a, T> {
+    type Item = State<'a, T>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self.left.take() {
+            Some(node) => Some(State::Node(node)),
+            None => match self.elem.take() {
+                Some(elem) => Some(State::Elem(elem)),
+                None => match self.right.take() {
+                    Some(node) => Some(State::Node(node)),
+                    None => None,
+                },
+            },
+        }
+    }
+}
+
+impl<'a, T: Ord> DoubleEndedIterator for NodeIterMut<'a, T> {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        match self.right.take() {
+            Some(node) => Some(State::Node(node)),
+            None => match self.elem.take() {
+                Some(elem) => Some(State::Elem(elem)),
+                None => match self.left.take() {
+                    Some(node) => Some(State::Node(node)),
+                    None => None,
+                },
+            },
+        }
+    }
+}
+
+impl<'a, T: Ord> Iterator for IterMut<'a, T> {
+    type Item = &'a mut T;
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            match self.0.front_mut().and_then(|node_it| node_it.next()) {
+                Some(State::Elem(elem)) => return Some(elem),
+                Some(State::Node(node)) => self.0.push_front(node.iter_mut()),
+                None => if let None = self.0.pop_front() {
+                    return None;
+                },
+            }
+        }
+    }
+}
+
+impl<'a, T: Ord> DoubleEndedIterator for IterMut<'a, T> {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        loop {
+            match self.0.back_mut().and_then(|node_it| node_it.next_back()) {
+                Some(State::Elem(elem)) => return Some(elem),
+                Some(State::Node(node)) => self.0.push_back(node.iter_mut()),
+                None => if let None = self.0.pop_back() {
+                    return None;
+                },
+            }
+        }
+    }
+}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -216,8 +305,7 @@ mod tests {
         tree.insert(-1);
         tree.insert(-2);
 
-        println!("{:?}", tree);
-        println!("{:?}", tree.len());
+        assert_eq!(12, tree.len());
         println!("{:?}", tree.fold(0, |acc, &x| acc + x));
         let mut i = tree.into_iter();
         println!("{:?}", i.next());
