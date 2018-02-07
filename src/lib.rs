@@ -8,22 +8,44 @@ use std::convert::AsMut;
 use std::cmp::Ordering;
 
 #[derive(Debug)]
-pub struct Tree<T: Ord>(Option<Box<Node<T>>>);
+pub struct Tree<T: Ord> {
+    root: Link<T>,
+}
 
-impl<T: Ord> AsMut<Option<Box<Node<T>>>> for Tree<T> {
-    fn as_mut(&mut self) -> &mut Option<Box<Node<T>>> {
-        &mut self.0
+impl<T: Ord> BinaryTree<T> for Tree<T> {
+    fn new(t: T) -> Self {
+        Tree { root: Link::new(t) }
+    }
+    fn insert(&mut self, t: T) {
+        self.root.insert(t);
+    }
+    fn contains(&self, t: &T) -> Option<&Link<T>> {
+        self.root.contains(t)
+    }
+    fn len(&self) -> usize {
+        self.root.len()
+    }
+    fn is_empty(&self) -> bool {
+        self.root.is_empty()
+    }
+    fn fold<B, F>(&self, init: B, f: F) -> B
+    where
+        F: FnMut(B, &T) -> B,
+    {
+        self.root.fold(init, f)
     }
 }
 
+pub type Link<T> = Option<Box<Node<T>>>;
+
 impl<T: Ord> PartialEq for Tree<T> {
     fn eq(&self, other: &Self) -> bool {
-        match self.0 {
-            Some(box ref x) => match other.0 {
+        match self.root {
+            Some(box ref x) => match other.root {
                 Some(box ref y) => *y == *x,
                 None => false,
             },
-            None => match other.0 {
+            None => match other.root {
                 Some(_) => false,
                 None => true,
             },
@@ -31,10 +53,10 @@ impl<T: Ord> PartialEq for Tree<T> {
     }
 }
 
-pub trait Link<T: Ord> {
-    fn new(data: T) -> Tree<T>;
+pub trait BinaryTree<T: Ord> {
+    fn new(data: T) -> Self;
     fn insert(&mut self, T);
-    fn contains(&self, &T) -> Option<&Tree<T>>;
+    fn contains(&self, &T) -> Option<&Link<T>>;
     fn len(&self) -> usize;
     fn is_empty(&self) -> bool;
     fn fold<B, F>(&self, init: B, f: F) -> B
@@ -44,28 +66,28 @@ pub trait Link<T: Ord> {
 
 #[derive(Debug, PartialEq)]
 pub struct Node<T: Ord> {
-    pub l: Tree<T>,
-    pub r: Tree<T>,
+    pub l: Link<T>,
+    pub r: Link<T>,
     pub data: T,
 }
 
 impl<T: Ord> Node<T> {
     fn new(data: T) -> Node<T> {
         Node {
-            l: Tree(None),
+            l: None,
             data,
-            r: Tree(None),
+            r: None,
         }
     }
 }
 
-impl<T: Ord> Link<T> for Tree<T> {
-    fn new(data: T) -> Tree<T> {
-        Tree(Some(box Node::new(data)))
+impl<T: Ord> BinaryTree<T> for Link<T> {
+    fn new(data: T) -> Link<T> {
+        Some(box Node::new(data))
     }
 
     fn len(&self) -> usize {
-        if let Some(box Node { ref l, ref r, .. }) = self.0 {
+        if let &Some(box Node { ref l, ref r, .. }) = self {
             1 + l.len() + r.len()
         } else {
             0
@@ -81,15 +103,15 @@ impl<T: Ord> Link<T> for Tree<T> {
     }
 
     fn insert(&mut self, item: T) {
-        if let Some(ref mut node) = self.0 {
+        if let &mut Some(ref mut node) = self {
             match item.cmp(&node.data) {
-                Ordering::Less => if node.l.0 == None {
-                    node.l = <Tree<T> as Link<T>>::new(item);
+                Ordering::Less => if node.l == None {
+                    node.l = <Link<T> as BinaryTree<T>>::new(item);
                 } else {
                     node.l.insert(item);
                 },
-                Ordering::Greater => if node.r.0 == None {
-                    node.r = <Tree<T> as Link<T>>::new(item);
+                Ordering::Greater => if node.r == None {
+                    node.r = <Link<T> as BinaryTree<T>>::new(item);
                 } else {
                     node.r.insert(item);
                 },
@@ -100,12 +122,12 @@ impl<T: Ord> Link<T> for Tree<T> {
         }
     }
 
-    fn contains(&self, item: &T) -> Option<&Tree<T>> {
-        if let Some(box Node {
+    fn contains(&self, item: &T) -> Option<&Link<T>> {
+        if let &Some(box Node {
             ref l,
             ref r,
             ref data,
-        }) = self.0
+        }) = self
         {
             if item == data {
                 Some(self)
@@ -130,15 +152,15 @@ impl<T: Ord> Link<T> for Tree<T> {
         F: for<'a> FnMut(B, &'a T) -> B,
     {
         let mut acc = init;
-        if let Some(ref node) = self.0 {
+        if let &Some(ref node) = self {
             let node = &*node;
             let mut stack = vec![node];
             while let Some(node) = stack.pop() {
                 acc = f(acc, &node.data);
-                if let Some(ref right) = node.r.0 {
+                if let Some(ref right) = node.r {
                     stack.push(right);
                 }
-                if let Some(ref left) = node.l.0 {
+                if let Some(ref left) = node.l {
                     stack.push(left);
                 }
             }
@@ -150,7 +172,7 @@ impl<T: Ord> Link<T> for Tree<T> {
 }
 
 pub struct TreeIter<T: Ord> {
-    right: Vec<Tree<T>>,
+    right: Vec<Link<T>>,
     cur: Option<T>,
 }
 
@@ -160,14 +182,14 @@ impl<T: Ord> TreeIter<T> {
             right: vec![],
             cur: None,
         };
-        iter.add_left(node);
+        iter.add_left(node.root);
         iter
     }
 
-    fn add_left(&mut self, mut root: Tree<T>) {
+    fn add_left(&mut self, mut root: Link<T>) {
         // https://github.com/rust-lang/rust/issues/19828
         // while let Some(box Node { l, r, data }) = root.0.take() {
-        while let Some(box node) = root.0 {
+        while let Some(box node) = root {
             let Node { l, r, data } = node;
             self.right.push(r);
             self.cur = Some(data);
@@ -211,7 +233,9 @@ pub struct IterMut<'a, T: 'a + Ord>(VecDeque<NodeIterMut<'a, T>>);
 impl<T: Ord> Tree<T> {
     pub fn iter_mut(&mut self) -> IterMut<T> {
         let mut deque = VecDeque::new();
-        self.as_mut().map(|root| deque.push_front(root.iter_mut()));
+        self.root
+            .as_mut()
+            .map(|root| deque.push_front(root.iter_mut()));
         IterMut(deque)
     }
 }
@@ -286,12 +310,13 @@ impl<'a, T: Ord> DoubleEndedIterator for IterMut<'a, T> {
         }
     }
 }
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn it_works() {
+    fn test_len_and_fold() {
         let mut tree = Tree::new(1);
         tree.insert(2);
         tree.insert(3);
@@ -306,10 +331,22 @@ mod tests {
         tree.insert(-2);
 
         assert_eq!(12, tree.len());
-        println!("{:?}", tree.fold(0, |acc, &x| acc + x));
-        let mut i = tree.into_iter();
-        println!("{:?}", i.next());
-        println!("{:?}", i.next());
-        println!("{:?}", i.next());
+        assert_eq!(5, tree.fold(0, |acc, &x| acc + x));
+    }
+
+    #[test]
+    fn test_plain_iter() {
+        let mut tree = Tree::new(1);
+        tree.insert(2);
+        tree.insert(3);
+        tree.insert(4);
+        tree.insert(5);
+        tree.insert(6);
+        tree.insert(7);
+        tree.insert(8);
+
+        tree.into_iter().zip(1..9).for_each(|(node, i)| {
+            assert_eq!(node, i);
+        });
     }
 }
