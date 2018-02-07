@@ -1,5 +1,5 @@
 # Forest
 
-This was done as an exercise in using Box and more 'advanced' Rust features. I plan to make it library quality, but for now it contains some things that aren't idiomatic Rust, for instance many fns are recursive.
+Rust binary tree implementation. Uses regular heap-allocated `Box` for now, in the future I will include an implementation using plain references in a `typed-arena`. 
 
-I also plan to include a fast binary tree version that uses references instead of boxing and a typed arena for allocation. But for now, there is a basic working binary tree implementation with `IntoIterator` and `Iterator` implementations.
+Functionality for now includes the most common methods you might need on a tree, `insert` `len` `fold` `into_iter` `iter_mut` `contains` `is_empty`. And common iterator traits like `FromIterator` `IntoIterator` `Iterator` `Extend`.
