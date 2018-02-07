@@ -2,9 +2,8 @@
 
 extern crate rayon;
 
-use std::iter::{FromIterator, IntoIterator};
+use std::iter::{Extend, FromIterator, IntoIterator};
 use std::collections::VecDeque;
-use std::convert::AsMut;
 use std::cmp::Ordering;
 
 #[derive(Debug)]
@@ -16,8 +15,15 @@ impl<T: Ord> BinaryTree<T> for Tree<T> {
     fn new(t: T) -> Self {
         Tree { root: Link::new(t) }
     }
+    fn empty() -> Self {
+        Tree { root: None }
+    }
     fn insert(&mut self, t: T) {
-        self.root.insert(t);
+        if self.root.is_none() {
+            self.root = Link::new(t);
+        } else {
+            self.root.insert(t);
+        }
     }
     fn contains(&self, t: &T) -> Option<&Link<T>> {
         self.root.contains(t)
@@ -54,7 +60,8 @@ impl<T: Ord> PartialEq for Tree<T> {
 }
 
 pub trait BinaryTree<T: Ord> {
-    fn new(data: T) -> Self;
+    fn empty() -> Self;
+    fn new(t: T) -> Self;
     fn insert(&mut self, T);
     fn contains(&self, &T) -> Option<&Link<T>>;
     fn len(&self) -> usize;
@@ -82,8 +89,12 @@ impl<T: Ord> Node<T> {
 }
 
 impl<T: Ord> BinaryTree<T> for Link<T> {
-    fn new(data: T) -> Link<T> {
-        Some(box Node::new(data))
+    fn empty() -> Self {
+        None
+    }
+
+    fn new(t: T) -> Self {
+        Some(box Node::new(t))
     }
 
     fn len(&self) -> usize {
@@ -171,13 +182,15 @@ impl<T: Ord> BinaryTree<T> for Link<T> {
     }
 }
 
+// Owned Iterator
+
 pub struct TreeIter<T: Ord> {
     right: Vec<Link<T>>,
     cur: Option<T>,
 }
 
 impl<T: Ord> TreeIter<T> {
-    pub fn new(node: Tree<T>) -> TreeIter<T> {
+    fn new(node: Tree<T>) -> TreeIter<T> {
         let mut iter = TreeIter {
             right: vec![],
             cur: None,
@@ -188,8 +201,8 @@ impl<T: Ord> TreeIter<T> {
 
     fn add_left(&mut self, mut root: Link<T>) {
         // https://github.com/rust-lang/rust/issues/19828
-        // while let Some(box Node { l, r, data }) = root.0.take() {
-        while let Some(box node) = root {
+        // while let Some(box Node { l, r, data }) = root.take() {
+        while let Some(box node) = root.take() {
             let Node { l, r, data } = node;
             self.right.push(r);
             self.cur = Some(data);
@@ -216,6 +229,8 @@ impl<T: Ord> Iterator for TreeIter<T> {
         cur_node
     }
 }
+
+// Mutable Iterator
 
 pub struct NodeIterMut<'a, T: 'a + Ord> {
     elem: Option<&'a mut T>,
@@ -311,13 +326,30 @@ impl<'a, T: Ord> DoubleEndedIterator for IterMut<'a, T> {
     }
 }
 
+impl<T: Ord> Extend<T> for Tree<T> {
+    fn extend<I: IntoIterator<Item = T>>(&mut self, iter: I) {
+        for item in iter {
+            self.insert(item);
+        }
+    }
+}
+
+impl<T: Ord> FromIterator<T> for Tree<T> {
+    fn from_iter<I: IntoIterator<Item = T>>(iter: I) -> Self {
+        let mut tree = Tree::empty();
+        tree.extend(iter);
+        tree
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn test_len_and_fold() {
-        let mut tree = Tree::new(1);
+        let mut tree = Tree::empty();
+        tree.insert(1);
         tree.insert(2);
         tree.insert(3);
         tree.insert(4);
@@ -336,7 +368,8 @@ mod tests {
 
     #[test]
     fn test_plain_iter() {
-        let mut tree = Tree::new(1);
+        let mut tree = Tree::empty();
+        tree.insert(1);
         tree.insert(2);
         tree.insert(3);
         tree.insert(4);
@@ -348,5 +381,32 @@ mod tests {
         tree.into_iter().zip(1..9).for_each(|(node, i)| {
             assert_eq!(node, i);
         });
+    }
+
+    #[test]
+    fn test_extend() {
+        let mut tree = Tree::empty();
+        tree.extend(0..10);
+        tree.into_iter().zip(0..10).for_each(|(node, i)| {
+            assert_eq!(node, i);
+        });
+    }
+
+    #[test]
+    fn test_from_iter() {
+        let tree = Tree::from_iter(vec![0, 1, 2, 3, 4, 5]);
+
+        assert_eq!(tree.len(), 6);
+    }
+
+    #[test]
+    fn test_iter_mut() {
+        let mut tree = Tree::from_iter(vec![0, 1, 2, 3, 4, 5]);
+
+        for node in tree.iter_mut() {
+            *node += 1;
+        }
+        assert_eq!(tree.len(), 6);
+        assert_eq!(1 + 2 + 3 + 4 + 5 + 6, tree.into_iter().sum())
     }
 }
