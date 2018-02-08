@@ -181,7 +181,20 @@ impl<T: Ord> BinaryTree<T> for Link<T> {
         }
     }
 }
+// reference Iterator
 
+struct TreeRefIter<'a, T: 'a + Ord> {
+    unvisited: Vec<&'a Node<T>>,
+}
+
+impl<'a, T: 'a + Ord> TreeRefIter<'a, T> {
+    fn push_left(&mut self, mut tree: &'a Link<T>) {
+        while let Some(ref node) = *tree {
+            self.unvisited.push(node);
+            tree = &node.l;
+        }
+    }
+}
 // Owned Iterator
 
 pub struct TreeIter<T: Ord> {
