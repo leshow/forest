@@ -217,9 +217,9 @@ impl<'a, T: 'a> IntoIterator for &'a Tree<T> {
 impl<'a, T> Iterator for TreeRefIter<'a, T> {
     type Item = &'a T;
     fn next(&mut self) -> Option<&'a T> {
-        self.unvisited.pop().map(|n| {
-            self.push_left(&n.r);
-            return &n.data;
+        self.unvisited.pop().map(|node| {
+            self.push_left(&node.r);
+            return &node.data;
         })
     }
 }
@@ -450,5 +450,18 @@ mod tests {
         }
         assert_eq!(tree.len(), 6);
         assert_eq!(1 + 2 + 3 + 4 + 5 + 6, tree.into_iter().sum())
+    }
+    #[test]
+    fn test_ref_mut() {
+        let mut tree = Tree::from_iter(vec![0, 1, 2, 3, 4, 5]);
+
+        for node in &tree {
+            if *node < 0 {
+                panic!();
+            } else if *node > 5 {
+                panic!();
+            }
+        }
+        assert_eq!(tree.len(), 6);
     }
 }
