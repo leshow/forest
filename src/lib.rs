@@ -7,7 +7,7 @@ use std::collections::VecDeque;
 use std::cmp::Ordering;
 
 #[derive(Debug)]
-pub struct Tree<T: Ord> {
+pub struct Tree<T> {
     root: Link<T>,
 }
 
@@ -72,7 +72,7 @@ pub trait BinaryTree<T: Ord> {
 }
 
 #[derive(Debug, PartialEq)]
-pub struct Node<T: Ord> {
+pub struct Node<T> {
     pub l: Link<T>,
     pub r: Link<T>,
     pub data: T,
@@ -85,6 +85,16 @@ impl<T: Ord> Node<T> {
             data,
             r: None,
         }
+    }
+}
+
+impl<T> Tree<T> {
+    fn iter<'a>(&'a self) -> TreeRefIter<'a, T> {
+        let mut iter = TreeRefIter {
+            unvisited: Vec::new(),
+        };
+        iter.push_left(&self.root);
+        iter
     }
 }
 
@@ -181,13 +191,13 @@ impl<T: Ord> BinaryTree<T> for Link<T> {
         }
     }
 }
-// reference Iterator
+// Reference Iterator
 
-struct TreeRefIter<'a, T: 'a + Ord> {
+pub struct TreeRefIter<'a, T: 'a> {
     unvisited: Vec<&'a Node<T>>,
 }
 
-impl<'a, T: 'a + Ord> TreeRefIter<'a, T> {
+impl<'a, T: 'a> TreeRefIter<'a, T> {
     fn push_left(&mut self, mut tree: &'a Link<T>) {
         while let Some(ref node) = *tree {
             self.unvisited.push(node);
@@ -195,14 +205,33 @@ impl<'a, T: 'a + Ord> TreeRefIter<'a, T> {
         }
     }
 }
+
+impl<'a, T: 'a> IntoIterator for &'a Tree<T> {
+    type Item = &'a T;
+    type IntoIter = TreeRefIter<'a, T>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
+}
+
+impl<'a, T> Iterator for TreeRefIter<'a, T> {
+    type Item = &'a T;
+    fn next(&mut self) -> Option<&'a T> {
+        self.unvisited.pop().map(|n| {
+            self.push_left(&n.r);
+            return &n.data;
+        })
+    }
+}
+
 // Owned Iterator
 
-pub struct TreeIter<T: Ord> {
+pub struct TreeIter<T> {
     right: Vec<Link<T>>,
     cur: Option<T>,
 }
 
-impl<T: Ord> TreeIter<T> {
+impl<T> TreeIter<T> {
     fn new(node: Tree<T>) -> TreeIter<T> {
         let mut iter = TreeIter {
             right: vec![],
@@ -224,7 +253,7 @@ impl<T: Ord> TreeIter<T> {
     }
 }
 
-impl<T: Ord> IntoIterator for Tree<T> {
+impl<T> IntoIterator for Tree<T> {
     type Item = T;
     type IntoIter = TreeIter<T>;
     fn into_iter(self) -> Self::IntoIter {
@@ -232,7 +261,7 @@ impl<T: Ord> IntoIterator for Tree<T> {
     }
 }
 
-impl<T: Ord> Iterator for TreeIter<T> {
+impl<T> Iterator for TreeIter<T> {
     type Item = T;
     fn next(&mut self) -> Option<T> {
         let cur_node = self.cur.take();
@@ -245,20 +274,20 @@ impl<T: Ord> Iterator for TreeIter<T> {
 
 // Mutable Iterator
 
-pub struct NodeIterMut<'a, T: 'a + Ord> {
+pub struct NodeIterMut<'a, T: 'a> {
     elem: Option<&'a mut T>,
     left: Option<&'a mut Node<T>>,
     right: Option<&'a mut Node<T>>,
 }
 
-pub enum State<'a, T: 'a + Ord> {
+pub enum State<'a, T: 'a> {
     Elem(&'a mut T),
     Node(&'a mut Node<T>),
 }
 
-pub struct IterMut<'a, T: 'a + Ord>(VecDeque<NodeIterMut<'a, T>>);
+pub struct IterMut<'a, T: 'a>(VecDeque<NodeIterMut<'a, T>>);
 
-impl<T: Ord> Tree<T> {
+impl<T> Tree<T> {
     pub fn iter_mut(&mut self) -> IterMut<T> {
         let mut deque = VecDeque::new();
         self.root
@@ -268,7 +297,7 @@ impl<T: Ord> Tree<T> {
     }
 }
 
-impl<T: Ord> Node<T> {
+impl<T> Node<T> {
     pub fn iter_mut(&mut self) -> NodeIterMut<T> {
         NodeIterMut {
             elem: Some(&mut self.data),
@@ -278,7 +307,7 @@ impl<T: Ord> Node<T> {
     }
 }
 
-impl<'a, T: Ord> Iterator for NodeIterMut<'a, T> {
+impl<'a, T> Iterator for NodeIterMut<'a, T> {
     type Item = State<'a, T>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -295,7 +324,7 @@ impl<'a, T: Ord> Iterator for NodeIterMut<'a, T> {
     }
 }
 
-impl<'a, T: Ord> DoubleEndedIterator for NodeIterMut<'a, T> {
+impl<'a, T> DoubleEndedIterator for NodeIterMut<'a, T> {
     fn next_back(&mut self) -> Option<Self::Item> {
         match self.right.take() {
             Some(node) => Some(State::Node(node)),
@@ -310,7 +339,7 @@ impl<'a, T: Ord> DoubleEndedIterator for NodeIterMut<'a, T> {
     }
 }
 
-impl<'a, T: Ord> Iterator for IterMut<'a, T> {
+impl<'a, T> Iterator for IterMut<'a, T> {
     type Item = &'a mut T;
     fn next(&mut self) -> Option<Self::Item> {
         loop {
@@ -325,7 +354,7 @@ impl<'a, T: Ord> Iterator for IterMut<'a, T> {
     }
 }
 
-impl<'a, T: Ord> DoubleEndedIterator for IterMut<'a, T> {
+impl<'a, T> DoubleEndedIterator for IterMut<'a, T> {
     fn next_back(&mut self) -> Option<Self::Item> {
         loop {
             match self.0.back_mut().and_then(|node_it| node_it.next_back()) {
