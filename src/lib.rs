@@ -1,10 +1,12 @@
-#![feature(box_syntax, box_patterns)]
+#![feature(box_syntax, box_patterns, box_into_raw_non_null)]
 
 extern crate rayon;
 
-use std::iter::{Extend, FromIterator, IntoIterator};
-use std::collections::VecDeque;
 use std::cmp::Ordering;
+use std::collections::VecDeque;
+use std::iter::{Extend, FromIterator, IntoIterator};
+use std::marker::PhantomData;
+use std::ptr::NonNull;
 
 #[derive(Debug)]
 pub struct Tree<T> {
@@ -42,13 +44,13 @@ impl<T: Ord> BinaryTree<T> for Tree<T> {
     }
 }
 
-pub type Link<T> = Option<Box<Node<T>>>;
+pub type Link<T> = Option<NonNull<Node<T>>>;
 
 impl<T: Ord> PartialEq for Tree<T> {
     fn eq(&self, other: &Self) -> bool {
         match self.root {
-            Some(box ref x) => match other.root {
-                Some(box ref y) => *y == *x,
+            Some(x) => match other.root {
+                Some(y) => unsafe { *(y.as_ptr()) == *(x.as_ptr()) },
                 None => false,
             },
             None => match other.root {
@@ -104,19 +106,16 @@ impl<T: Ord> BinaryTree<T> for Link<T> {
     }
 
     fn new(t: T) -> Self {
-        Some(box Node::new(t))
+        Some(Box::into_raw_non_null(box Node::new(t)))
     }
 
     fn len(&self) -> usize {
-        if let &Some(box Node { ref l, ref r, .. }) = self {
-            1 + l.len() + r.len()
+        if let Some(node) = self {
+            let node = unsafe { &*node.as_ptr() };
+            1 + node.l.len() + node.r.len()
         } else {
             0
         }
-        // without box syntax
-        // if let &Some(ref node) = tree {
-        //     let node = &*node;
-        //     1 + node.l.len() + node.r.len()
     }
 
     fn is_empty(&self) -> bool {
@@ -124,7 +123,8 @@ impl<T: Ord> BinaryTree<T> for Link<T> {
     }
 
     fn insert(&mut self, item: T) {
-        if let &mut Some(ref mut node) = self {
+        if let Some(node) = self {
+            let mut node = unsafe { &mut (*node.as_ptr()) };
             match item.cmp(&node.data) {
                 Ordering::Less => if node.l == None {
                     node.l = <Link<T> as BinaryTree<T>>::new(item);
@@ -144,23 +144,25 @@ impl<T: Ord> BinaryTree<T> for Link<T> {
     }
 
     fn contains(&self, item: &T) -> Option<&Link<T>> {
-        if let &Some(box Node {
-            ref l,
-            ref r,
-            ref data,
-        }) = self
-        {
-            if item == data {
-                Some(self)
-            } else {
-                let l_ = l.contains(item);
-                let r_ = r.contains(item);
-                match l_.is_some() {
-                    true => l_,
-                    false => match r_.is_some() {
-                        true => r_,
-                        false => None,
-                    },
+        if let &Some(node) = self {
+            unsafe {
+                let Node {
+                    ref l,
+                    ref r,
+                    ref data,
+                } = *node.as_ptr();
+                if item == data {
+                    Some(self)
+                } else {
+                    let l_ = l.contains(item);
+                    let r_ = r.contains(item);
+                    match l_.is_some() {
+                        true => l_,
+                        false => match r_.is_some() {
+                            true => r_,
+                            false => None,
+                        },
+                    }
                 }
             }
         } else {
@@ -174,14 +176,15 @@ impl<T: Ord> BinaryTree<T> for Link<T> {
     {
         let mut acc = init;
         if let &Some(ref node) = self {
-            let node = &*node;
+            let node = *node;
             let mut stack = vec![node];
             while let Some(node) = stack.pop() {
+                let node = unsafe { Box::from_raw(node.as_ptr()) };
                 acc = f(acc, &node.data);
-                if let Some(ref right) = node.r {
+                if let Some(right) = node.r {
                     stack.push(right);
                 }
-                if let Some(ref left) = node.l {
+                if let Some(left) = node.l {
                     stack.push(left);
                 }
             }
@@ -199,7 +202,8 @@ pub struct TreeRefIter<'a, T: 'a> {
 
 impl<'a, T: 'a> TreeRefIter<'a, T> {
     fn push_left(&mut self, mut tree: &'a Link<T>) {
-        while let Some(ref node) = *tree {
+        while let Some(node) = *tree {
+            let node = unsafe { &(*node.as_ptr()) };
             self.unvisited.push(node);
             tree = &node.l;
         }
@@ -242,10 +246,8 @@ impl<T> TreeIter<T> {
     }
 
     fn add_left(&mut self, mut root: Link<T>) {
-        // https://github.com/rust-lang/rust/issues/19828
-        // while let Some(box Node { l, r, data }) = root.take() {
-        while let Some(box node) = root.take() {
-            let Node { l, r, data } = node;
+        while let Some(node) = root.take() {
+            let Node { l, r, data } = unsafe { *Box::from_raw(node.as_ptr()) };
             self.right.push(r);
             self.cur = Some(data);
             root = l;
@@ -290,9 +292,10 @@ pub struct IterMut<'a, T: 'a>(VecDeque<NodeIterMut<'a, T>>);
 impl<T> Tree<T> {
     pub fn iter_mut(&mut self) -> IterMut<T> {
         let mut deque = VecDeque::new();
-        self.root
-            .as_mut()
-            .map(|root| deque.push_front(root.iter_mut()));
+        self.root.as_mut().map(|root| unsafe {
+            let root = (*root.as_ptr()).iter_mut();
+            deque.push_front(root);
+        });
         IterMut(deque)
     }
 }
@@ -301,8 +304,8 @@ impl<T> Node<T> {
     pub fn iter_mut(&mut self) -> NodeIterMut<T> {
         NodeIterMut {
             elem: Some(&mut self.data),
-            left: self.l.as_mut().map(|node| &mut **node),
-            right: self.r.as_mut().map(|node| &mut **node),
+            left: self.l.as_mut().map(|node| unsafe { &mut *node.as_ptr() }),
+            right: self.r.as_mut().map(|node| unsafe { &mut *node.as_ptr() }),
         }
     }
 }
