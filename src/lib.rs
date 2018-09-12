@@ -10,47 +10,65 @@ use std::ptr::NonNull;
 
 #[derive(Debug)]
 pub struct Tree<T> {
-    root: Link<T>,
+    root: Option<Node<T>>,
+    length: usize,
 }
 
-impl<T: Ord> BinaryTree<T> for Tree<T> {
-    fn new(t: T) -> Self {
-        Tree { root: Link::new(t) }
-    }
-    fn empty() -> Self {
-        Tree { root: None }
-    }
-    fn insert(&mut self, t: T) {
-        if self.root.is_none() {
-            self.root = Link::new(t);
-        } else {
-            self.root.insert(t);
+impl<T> Tree<T> {
+    pub fn empty() -> Self {
+        Tree {
+            root: None,
+            length: 0,
         }
     }
-    fn contains(&self, t: &T) -> Option<&Link<T>> {
-        self.root.contains(t)
+    pub fn len(&self) -> usize {
+        self.length
     }
-    fn len(&self) -> usize {
-        self.root.len()
+    pub fn is_empty(&self) -> bool {
+        self.length == 0
     }
-    fn is_empty(&self) -> bool {
-        self.root.is_empty()
+}
+
+impl<T: Ord> Tree<T> {
+    pub fn new(t: T) -> Self {
+        Tree {
+            root: Some(Node::new(t)),
+            length: 1,
+        }
     }
-    fn fold<B, F>(&self, init: B, f: F) -> B
+    pub fn insert(&mut self, t: T) {
+        match self.root {
+            None => {
+                self.root = Some(Node::new(t));
+            }
+            Some(ref mut n) => {
+                n.insert(t);
+            }
+        }
+        self.length += 1;
+    }
+    pub fn contains(&self, t: &T) -> Option<&Node<T>> {
+        match self.root {
+            Some(ref n) => n.contains(t),
+            None => None,
+        }
+    }
+    pub fn fold<B, F>(&self, init: B, f: F) -> B
     where
         F: FnMut(B, &T) -> B,
     {
-        self.root.fold(init, f)
+        match self.root {
+            None => init,
+            Some(ref n) => n.fold(init, f),
+        }
     }
 }
 
-pub type Link<T> = Option<NonNull<Node<T>>>;
-
-impl<T: Ord> PartialEq for Tree<T> {
+impl<T: PartialEq> PartialEq for Tree<T> {
     fn eq(&self, other: &Self) -> bool {
         match self.root {
-            Some(x) => match other.root {
-                Some(y) => unsafe { *(y.as_ptr()) == *(x.as_ptr()) },
+            Some(ref x) => match other.root {
+                Some(ref y) => y == x,
                 None => false,
             },
             None => match other.root {
@@ -61,112 +79,134 @@ impl<T: Ord> PartialEq for Tree<T> {
     }
 }
 
-pub trait BinaryTree<T: Ord> {
-    fn empty() -> Self;
-    fn new(t: T) -> Self;
-    fn insert(&mut self, T);
-    fn contains(&self, &T) -> Option<&Link<T>>;
-    fn len(&self) -> usize;
-    fn is_empty(&self) -> bool;
-    fn fold<B, F>(&self, init: B, f: F) -> B
-    where
-        F: for<'a> FnMut(B, &'a T) -> B;
-}
-
 #[derive(Debug, PartialEq)]
 pub struct Node<T> {
     pub l: Link<T>,
     pub r: Link<T>,
     pub data: T,
+    _marker: PhantomData<Box<Node<T>>>,
+}
+
+#[derive(Debug)]
+pub struct Link<T> {
+    ptr: Option<NonNull<Node<T>>>,
+}
+
+impl<T: PartialEq> PartialEq for Link<T> {
+    fn eq(&self, other: &Self) -> bool {
+        match self.ptr {
+            Some(n) => match other.ptr {
+                Some(o) => unsafe { *(n.as_ptr()) == *(o.as_ptr()) },
+                None => false,
+            },
+            None => match other.ptr {
+                Some(_) => false,
+                None => true,
+            },
+        }
+    }
+}
+
+impl<T> Link<T> {
+    fn len(&self) -> usize {
+        match self.ptr {
+            Some(n) => unsafe { (&*n.as_ptr()).len() },
+            None => 0,
+        }
+    }
+    fn none() -> Self {
+        Link { ptr: None }
+    }
+    fn is_none(&self) -> bool {
+        match self.ptr {
+            Some(_) => false,
+            None => true,
+        }
+    }
+}
+
+// impl<T> AsMut<Option<Node<T>>> for Link<T> {
+//     fn as_mut(&mut self) -> &mut Option<Node<T>> {
+//         &mut self.ptr.map(|node| unsafe { *node.as_ptr() })
+//     }
+// }
+
+// impl<T> AsRef<Option<Node<T>>> for Link<T> {
+//     fn as_ref(&self) -> &Option<Node<T>> {
+//         &self.ptr.map(|node| unsafe { *(node.as_ptr()) })
+//     }
+// }
+
+impl<T: Ord> Link<T> {
+    fn new(data: T) -> Self {
+        Link {
+            ptr: Some(Box::into_raw_non_null(Box::new(Node::new(data)))),
+        }
+    }
+    fn contains(&self, item: &T) -> Option<&Node<T>> {
+        match self.ptr {
+            Some(ref o) => {
+                let n = unsafe { &(*o.as_ptr()) };
+                if n.data == *item {
+                    return Some(&n);
+                } else {
+                    return n.contains(&item);
+                }
+            }
+            None => None,
+        }
+    }
+}
+
+impl<T> Node<T> {
+    fn len(&self) -> usize {
+        1 + self.l.len() + self.r.len()
+    }
 }
 
 impl<T: Ord> Node<T> {
-    fn new(data: T) -> Node<T> {
+    fn new(data: T) -> Self {
         Node {
-            l: None,
+            l: Link::none(),
+            r: Link::none(),
             data,
-            r: None,
+            _marker: PhantomData,
         }
     }
-}
-
-impl<T> Tree<T> {
-    fn iter<'a>(&'a self) -> TreeRefIter<'a, T> {
-        let mut iter = TreeRefIter {
-            unvisited: Vec::new(),
-        };
-        iter.push_left(&self.root);
-        iter
-    }
-}
-
-impl<T: Ord> BinaryTree<T> for Link<T> {
-    fn empty() -> Self {
-        None
-    }
-
-    fn new(t: T) -> Self {
-        Some(Box::into_raw_non_null(box Node::new(t)))
-    }
-
-    fn len(&self) -> usize {
-        if let Some(node) = self {
-            let node = unsafe { &*node.as_ptr() };
-            1 + node.l.len() + node.r.len()
-        } else {
-            0
-        }
-    }
-
-    fn is_empty(&self) -> bool {
-        self.len() == 0
-    }
-
     fn insert(&mut self, item: T) {
-        if let Some(node) = self {
-            let mut node = unsafe { &mut (*node.as_ptr()) };
-            match item.cmp(&node.data) {
-                Ordering::Less => if node.l == None {
-                    node.l = <Link<T> as BinaryTree<T>>::new(item);
-                } else {
-                    node.l.insert(item);
-                },
-                Ordering::Greater => if node.r == None {
-                    node.r = <Link<T> as BinaryTree<T>>::new(item);
-                } else {
-                    node.r.insert(item);
-                },
-                Ordering::Equal => {
-                    return;
+        match item.cmp(&self.data) {
+            Ordering::Less => match self.l.ptr {
+                None => self.l = Link::new(item),
+                Some(node) => {
+                    let node = unsafe { &mut (*node.as_ptr()) };
+                    node.insert(item);
                 }
+            },
+            Ordering::Greater => match self.r.ptr {
+                None => self.r = Link::new(item),
+                Some(node) => {
+                    let node = unsafe { &mut (*node.as_ptr()) };
+                    node.insert(item);
+                }
+            },
+            Ordering::Equal => {
+                return;
             }
         }
     }
-
-    fn contains(&self, item: &T) -> Option<&Link<T>> {
-        if let &Some(node) = self {
-            unsafe {
-                let Node {
-                    ref l,
-                    ref r,
-                    ref data,
-                } = *node.as_ptr();
-                if item == data {
-                    Some(self)
-                } else {
-                    let l_ = l.contains(item);
-                    let r_ = r.contains(item);
-                    match l_.is_some() {
-                        true => l_,
-                        false => match r_.is_some() {
-                            true => r_,
-                            false => None,
-                        },
-                    }
-                }
-            }
+    fn contains(&self, item: &T) -> Option<&Node<T>> {
+        if self.data == *item {
+            Some(&self)
         } else {
-            None
+            let l_ = self.l.contains(item);
+            let r_ = self.r.contains(item);
+            match l_.is_some() {
+                true => l_,
+                false => match r_.is_some() {
+                    true => r_,
+                    false => None,
+                },
+            }
         }
     }
 
@@ -175,25 +215,34 @@ impl<T: Ord> BinaryTree<T> for Link<T> {
         F: for<'a> FnMut(B, &'a T) -> B,
     {
         let mut acc = init;
-        if let &Some(ref node) = self {
-            let node = *node;
-            let mut stack = vec![node];
-            while let Some(node) = stack.pop() {
-                let node = unsafe { Box::from_raw(node.as_ptr()) };
-                acc = f(acc, &node.data);
-                if let Some(right) = node.r {
-                    stack.push(right);
-                }
-                if let Some(left) = node.l {
-                    stack.push(left);
-                }
+        let mut stack = vec![self];
+        while let Some(node) = stack.pop() {
+            acc = f(acc, &node.data);
+            if let Some(right) = node.r.ptr {
+                let r = unsafe { &(*right.as_ptr()) };
+                stack.push(r);
             }
-            acc
-        } else {
-            acc
+            if let Some(left) = node.l.ptr {
+                let l = unsafe { &(*left.as_ptr()) };
+                stack.push(l);
+            }
         }
+        acc
     }
 }
+
+impl<T> Tree<T> {
+    fn iter<'a>(&'a self) -> TreeRefIter<'a, T> {
+        let mut iter = TreeRefIter {
+            unvisited: Vec::new(),
+        };
+        if let Some(ref root) = self.root {
+            iter.push_left(&root.l);
+        }
+        iter
+    }
+}
+
 // Reference Iterator
 
 pub struct TreeRefIter<'a, T: 'a> {
@@ -202,7 +251,7 @@ pub struct TreeRefIter<'a, T: 'a> {
 
 impl<'a, T: 'a> TreeRefIter<'a, T> {
     fn push_left(&mut self, mut tree: &'a Link<T>) {
-        while let Some(node) = *tree {
+        while let Some(node) = (*tree).ptr {
             let node = unsafe { &(*node.as_ptr()) };
             self.unvisited.push(node);
             tree = &node.l;
@@ -241,13 +290,15 @@ impl<T> TreeIter<T> {
             right: vec![],
             cur: None,
         };
-        iter.add_left(node.root);
+        if let Some(root) = node.root {
+            iter.add_left(root.l);
+        }
         iter
     }
 
     fn add_left(&mut self, mut root: Link<T>) {
-        while let Some(node) = root.take() {
-            let Node { l, r, data } = unsafe { *Box::from_raw(node.as_ptr()) };
+        while let Some(node) = root.ptr.take() {
+            let Node { l, r, data, .. } = unsafe { *Box::from_raw(node.as_ptr()) };
             self.right.push(r);
             self.cur = Some(data);
             root = l;
@@ -292,9 +343,8 @@ pub struct IterMut<'a, T: 'a>(VecDeque<NodeIterMut<'a, T>>);
 impl<T> Tree<T> {
     pub fn iter_mut(&mut self) -> IterMut<T> {
         let mut deque = VecDeque::new();
-        self.root.as_mut().map(|root| unsafe {
-            let root = (*root.as_ptr()).iter_mut();
-            deque.push_front(root);
+        self.root.as_mut().map(|root| {
+            deque.push_front(root.iter_mut());
         });
         IterMut(deque)
     }
@@ -304,8 +354,16 @@ impl<T> Node<T> {
     pub fn iter_mut(&mut self) -> NodeIterMut<T> {
         NodeIterMut {
             elem: Some(&mut self.data),
-            left: self.l.as_mut().map(|node| unsafe { &mut *node.as_ptr() }),
-            right: self.r.as_mut().map(|node| unsafe { &mut *node.as_ptr() }),
+            left: self
+                .l
+                .ptr
+                .as_mut()
+                .map(|node| unsafe { &mut *node.as_ptr() }),
+            right: self
+                .r
+                .ptr
+                .as_mut()
+                .map(|node| unsafe { &mut *node.as_ptr() }),
         }
     }
 }
@@ -450,6 +508,9 @@ mod tests {
 
         for node in tree.iter_mut() {
             *node += 1;
+        }
+        for node in &tree {
+            println!("{:?}", node);
         }
         assert_eq!(tree.len(), 6);
         assert_eq!(1 + 2 + 3 + 4 + 5 + 6, tree.into_iter().sum())
