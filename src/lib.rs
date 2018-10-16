@@ -64,8 +64,8 @@ impl<T: Ord> PartialEq for Tree<T> {
 pub trait BinaryTree<T: Ord> {
     fn empty() -> Self;
     fn new(t: T) -> Self;
-    fn insert(&mut self, T);
-    fn contains(&self, &T) -> Option<&Link<T>>;
+    fn insert(&mut self, t: T);
+    fn contains(&self, t: &T) -> Option<&Link<T>>;
     fn len(&self) -> usize;
     fn is_empty(&self) -> bool;
     fn fold<B, F>(&self, init: B, f: F) -> B
@@ -91,7 +91,7 @@ impl<T: Ord> Node<T> {
 }
 
 impl<T> Tree<T> {
-    fn iter<'a>(&'a self) -> TreeRefIter<'a, T> {
+    fn iter(&self) -> TreeRefIter<'_, T> {
         let mut iter = TreeRefIter {
             unvisited: Vec::new(),
         };
@@ -124,18 +124,22 @@ impl<T: Ord> BinaryTree<T> for Link<T> {
 
     fn insert(&mut self, item: T) {
         if let Some(node) = self {
-            let mut node = unsafe { &mut (*node.as_ptr()) };
+            let node = unsafe { &mut (*node.as_ptr()) };
             match item.cmp(&node.data) {
-                Ordering::Less => if node.l == None {
-                    node.l = <Link<T> as BinaryTree<T>>::new(item);
-                } else {
-                    node.l.insert(item);
-                },
-                Ordering::Greater => if node.r == None {
-                    node.r = <Link<T> as BinaryTree<T>>::new(item);
-                } else {
-                    node.r.insert(item);
-                },
+                Ordering::Less => {
+                    if node.l == None {
+                        node.l = <Link<T> as BinaryTree<T>>::new(item);
+                    } else {
+                        node.l.insert(item);
+                    }
+                }
+                Ordering::Greater => {
+                    if node.r == None {
+                        node.r = <Link<T> as BinaryTree<T>>::new(item);
+                    } else {
+                        node.r.insert(item);
+                    }
+                }
                 Ordering::Equal => {
                     return;
                 }
@@ -144,7 +148,7 @@ impl<T: Ord> BinaryTree<T> for Link<T> {
     }
 
     fn contains(&self, item: &T) -> Option<&Link<T>> {
-        if let &Some(node) = self {
+        if let Some(node) = *self {
             unsafe {
                 let Node {
                     ref l,
@@ -156,12 +160,12 @@ impl<T: Ord> BinaryTree<T> for Link<T> {
                 } else {
                     let l_ = l.contains(item);
                     let r_ = r.contains(item);
-                    match l_.is_some() {
-                        true => l_,
-                        false => match r_.is_some() {
-                            true => r_,
-                            false => None,
-                        },
+                    if l_.is_some() {
+                        l_
+                    } else if r_.is_some() {
+                        r_
+                    } else {
+                        None
                     }
                 }
             }
@@ -175,7 +179,7 @@ impl<T: Ord> BinaryTree<T> for Link<T> {
         F: for<'a> FnMut(B, &'a T) -> B,
     {
         let mut acc = init;
-        if let &Some(ref node) = self {
+        if let Some(ref node) = *self {
             let node = *node;
             let mut stack = vec![node];
             while let Some(node) = stack.pop() {
@@ -223,7 +227,7 @@ impl<'a, T> Iterator for TreeRefIter<'a, T> {
     fn next(&mut self) -> Option<&'a T> {
         self.unvisited.pop().map(|node| {
             self.push_left(&node.r);
-            return &node.data;
+            &node.data
         })
     }
 }
@@ -236,7 +240,7 @@ pub struct TreeIter<T> {
 }
 
 impl<T> TreeIter<T> {
-    fn new(node: Tree<T>) -> TreeIter<T> {
+    fn new(node: &Tree<T>) -> TreeIter<T> {
         let mut iter = TreeIter {
             right: vec![],
             cur: None,
@@ -259,7 +263,7 @@ impl<T> IntoIterator for Tree<T> {
     type Item = T;
     type IntoIter = TreeIter<T>;
     fn into_iter(self) -> Self::IntoIter {
-        TreeIter::new(self)
+        TreeIter::new(&self)
     }
 }
 
@@ -349,9 +353,9 @@ impl<'a, T> Iterator for IterMut<'a, T> {
             match self.0.front_mut().and_then(|node_it| node_it.next()) {
                 Some(State::Elem(elem)) => return Some(elem),
                 Some(State::Node(node)) => self.0.push_front(node.iter_mut()),
-                None => if let None = self.0.pop_front() {
-                    return None;
-                },
+                None => {
+                    self.0.pop_front()?;
+                }
             }
         }
     }
@@ -363,9 +367,9 @@ impl<'a, T> DoubleEndedIterator for IterMut<'a, T> {
             match self.0.back_mut().and_then(|node_it| node_it.next_back()) {
                 Some(State::Elem(elem)) => return Some(elem),
                 Some(State::Node(node)) => self.0.push_back(node.iter_mut()),
-                None => if let None = self.0.pop_back() {
-                    return None;
-                },
+                None => {
+                    self.0.pop_back()?;
+                }
             }
         }
     }
@@ -456,7 +460,7 @@ mod tests {
     }
     #[test]
     fn test_ref_mut() {
-        let mut tree = Tree::from_iter(vec![0, 1, 2, 3, 4, 5]);
+        let tree = Tree::from_iter(vec![0, 1, 2, 3, 4, 5]);
 
         for node in &tree {
             if *node < 0 {
